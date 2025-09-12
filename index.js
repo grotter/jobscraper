@@ -35,6 +35,8 @@ async function saveToS3 (stringContent, isInternal = false) {
 }
 
 async function getJobs (isString = true) {
+    let isSuccess = false;
+
     try {
         const response = await fetch(CONFIG.ENDPOINT);
         const html = await response.text();
@@ -43,27 +45,26 @@ async function getJobs (isString = true) {
         // validate json
         if (data !== null) {
             if (isString) {
-                saveToS3(html);
+                const saveResult = await saveToS3(html);
+                isSuccess = (saveResult && typeof(saveResult.ETag) == 'string');
             } else {
                 console.log(data);
+                isSuccess = true;
             }
         }
     } catch (e) {
         console.error(e);
-
-        return {
-            statusCode: 500,
-            body: JSON.stringify(e)
-        };
     }
 
     return {
-        statusCode: 200,
-        body: JSON.stringify({ success: true })
+        statusCode: isSuccess ? 200 : 500,
+        body: JSON.stringify({ success: isSuccess })
     };
 }
 
 async function getInternalJobs (isString = true) {
+    let isSuccess = false;
+
     try {
         const response = await fetch(CONFIG.ENDPOINT_INTERNAL, {
             headers: {
@@ -80,23 +81,19 @@ async function getInternalJobs (isString = true) {
             
             if (isString) {
                 const saveResult = await saveToS3(JSON.stringify(jobsData), true);
-                console.log(saveResult);
+                isSuccess = (saveResult && typeof(saveResult.ETag) == 'string');
             } else {
                 console.log(jobsData);
+                isSuccess = true;
             }
         }
     } catch (e) {
         console.error(e);
-
-        return {
-            statusCode: 500,
-            body: JSON.stringify(e)
-        };
     }
 
     return {
-        statusCode: 200,
-        body: JSON.stringify({ success: true })
+        statusCode: isSuccess ? 200 : 500,
+        body: JSON.stringify({ success: isSuccess })
     };
 }
 
