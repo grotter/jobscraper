@@ -1,5 +1,38 @@
 const { JSDOM } = require('jsdom');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const dayjs = require('dayjs');
+
 const CONFIG = require('./config');
+
+async function saveToS3 (stringContent, isInternal = false) {
+    // validate
+    if (typeof(stringContent) !== 'string') return false;
+    
+    // trim
+    stringContent = stringContent.trim();
+    if (!stringContent) return false;
+
+    try {
+        let filePath = isInternal ? 'internal/' : '';
+        filePath += dayjs().format('YYYYMMDD_HHmmss');
+        filePath += '.json';
+
+        const s3Client = new S3Client();
+
+        const command = new PutObjectCommand({
+            Bucket: CONFIG.S3_BUCKET,
+            Key: 'jobs/' + filePath,
+            Body: stringContent,
+            ContentType: 'application/json'
+        });
+
+        return await s3Client.send(command);
+    } catch (e) {
+        console.error(e);
+    }
+
+    return false;
+}
 
 async function getJobs (isString = true) {
     try {
@@ -10,7 +43,7 @@ async function getJobs (isString = true) {
         // validate json
         if (data !== null) {
             if (isString) {
-                console.log(html);
+                saveToS3(html);
             } else {
                 console.log(data);
             }
@@ -36,7 +69,7 @@ async function getInternalJobs (isString = true) {
             const jobsData = dom.window.__remixContext.state.loaderData['routes/internal_job_board'].jobPosts.data;
             
             if (isString) {
-                console.log(JSON.stringify(jobsData));
+                saveToS3(JSON.stringify(jobsData), true);
             } else {
                 console.log(jobsData);
             }

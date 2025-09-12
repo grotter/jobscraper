@@ -1,5 +1,7 @@
 {
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.887.0",
+    "dayjs": "^1.11.18",
     "jsdom": "^26.1.0"
   }
 }

@@ -1,7 +1,8 @@
 const CONFIG = {
 	ENDPOINT: 'https://URL',
 	ENDPOINT_INTERNAL: 'https://URL',
-    SESSION_ID: 'loremipsumdolorsitamet'
+    SESSION_ID: 'loremipsumdolorsitamet',
+	S3_BUCKET: 'bucket.co.org'
 };
 
 module.exports = CONFIG;
