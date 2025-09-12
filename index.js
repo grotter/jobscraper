@@ -27,6 +27,8 @@ async function saveToS3 (stringContent, isInternal = false) {
         });
 
         const response = await s3Client.send(command);
+        console.log(response);
+
     } catch (e) {
         console.error(e);
 
