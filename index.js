@@ -26,22 +26,12 @@ async function saveToS3 (stringContent, isInternal = false) {
             ContentType: 'application/json'
         });
 
-        const response = await s3Client.send(command);
-        console.log(response);
-
+        return await s3Client.send(command);
     } catch (e) {
         console.error(e);
-
-        return {
-            statusCode: 500,
-            body: JSON.stringify(e)
-        };
     }
 
-    return {
-        statusCode: 200,
-        body: JSON.stringify({ success: true })
-    };
+    return false;
 }
 
 async function getJobs (isString = true) {
@@ -89,7 +79,8 @@ async function getInternalJobs (isString = true) {
             const jobsData = dom.window.__remixContext.state.loaderData['routes/internal_job_board'].jobPosts.data;
             
             if (isString) {
-                saveToS3(JSON.stringify(jobsData), true);
+                const saveResult = await saveToS3(JSON.stringify(jobsData), true);
+                console.log(saveResult);
             } else {
                 console.log(jobsData);
             }
