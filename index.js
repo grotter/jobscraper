@@ -26,12 +26,20 @@ async function saveToS3 (stringContent, isInternal = false) {
             ContentType: 'application/json'
         });
 
-        return await s3Client.send(command);
+        const response = await s3Client.send(command);
     } catch (e) {
         console.error(e);
+
+        return {
+            statusCode: 500,
+            body: JSON.stringify(e)
+        };
     }
 
-    return false;
+    return {
+        statusCode: 200,
+        body: JSON.stringify({ success: true })
+    };
 }
 
 async function getJobs (isString = true) {
@@ -50,7 +58,17 @@ async function getJobs (isString = true) {
         }
     } catch (e) {
         console.error(e);
+
+        return {
+            statusCode: 500,
+            body: JSON.stringify(e)
+        };
     }
+
+    return {
+        statusCode: 200,
+        body: JSON.stringify({ success: true })
+    };
 }
 
 async function getInternalJobs (isString = true) {
@@ -76,7 +94,17 @@ async function getInternalJobs (isString = true) {
         }
     } catch (e) {
         console.error(e);
+
+        return {
+            statusCode: 500,
+            body: JSON.stringify(e)
+        };
     }
+
+    return {
+        statusCode: 200,
+        body: JSON.stringify({ success: true })
+    };
 }
 
 async function start (event, context) {
@@ -84,10 +112,10 @@ async function start (event, context) {
 
     switch (event.type) {
         case 'internal':
-            getInternalJobs(isString);
+            return getInternalJobs(isString);
             break;
         default:
-            getJobs(isString);
+            return getJobs(isString);
     }
 }
 
