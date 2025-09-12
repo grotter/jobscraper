@@ -79,10 +79,21 @@ async function getInternalJobs (isString = true) {
     }
 }
 
-switch (process.argv[2]) {
-    case 'internal':
-        getInternalJobs();
-        break;
-    default:
-        getJobs();
+async function start (event, context) {
+    let isString = event.isString === false ? false : true;
+
+    switch (event.type) {
+        case 'internal':
+            getInternalJobs(isString);
+            break;
+        default:
+            getJobs(isString);
+    }
+}
+
+if (process.env.AWS_EXECUTION_ENV) {
+    exports.handler = start;
+} else {
+    let data = JSON.parse(process.argv[2] || '{}');
+	start(data);
 }
