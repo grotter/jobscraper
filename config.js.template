@@ -1,0 +1,7 @@
+const CONFIG = {
+	ENDPOINT: 'https://URL',
+	ENDPOINT_INTERNAL: 'https://URL',
+    SESSION_ID: 'loremipsumdolorsitamet'
+};
+
+module.exports = CONFIG;
