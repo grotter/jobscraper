@@ -62,18 +62,28 @@ async function getJobs (isString = true) {
     };
 }
 
-async function getInternalJobDetails (job) {
-    if (!job.absolute_url) return false;
-
+async function getDOM (url) {
     try {
-        const response = await fetch(CONFIG.ENDPOINT_INTERNAL + job.absolute_url, {
+        const response = await fetch(url, {
             headers: {
                 'Cookie': '_session_id=' + CONFIG.SESSION_ID + ';'
             }
         });
         
         const html = await response.text();
-        const dom = new JSDOM(html, { runScripts: 'dangerously' });
+        return new JSDOM(html, { runScripts: 'dangerously' });
+    } catch (e) {
+        console.error(e);
+    }
+
+    return false;
+}
+
+async function getInternalJobDetails (job) {
+    if (!job.absolute_url) return false;
+
+    try {
+        const dom = await getDOM(CONFIG.ENDPOINT_INTERNAL + job.absolute_url);
     
         if (dom.window.__remixContext && dom.window.__remixContext.state.loaderData) {
             return dom.window.__remixContext.state.loaderData['routes/internal_job_board_.applications_.$job_post_id'].jobPost;
@@ -89,14 +99,7 @@ async function getInternalJobs (isString = true) {
     let isSuccess = false;
 
     try {
-        const response = await fetch(CONFIG.ENDPOINT_INTERNAL + CONFIG.INTERNAL_JOB_BOARD_RESOURCE, {
-            headers: {
-                'Cookie': '_session_id=' + CONFIG.SESSION_ID + ';'
-            }
-        });
-        
-        const html = await response.text();
-        const dom = new JSDOM(html, { runScripts: 'dangerously' });
+        const dom = await getDOM(CONFIG.ENDPOINT_INTERNAL + CONFIG.INTERNAL_JOB_BOARD_RESOURCE);
 
         // html js variable
         if (dom.window.__remixContext && dom.window.__remixContext.state.loaderData) {
