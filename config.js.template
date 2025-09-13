@@ -1,6 +1,7 @@
 const CONFIG = {
 	ENDPOINT: 'https://URL',
 	ENDPOINT_INTERNAL: 'https://URL',
+	INTERNAL_JOB_BOARD_RESOURCE: '/internal_job_board',
     SESSION_ID: 'loremipsumdolorsitamet',
 	S3_BUCKET: 'bucket.co.org'
 };

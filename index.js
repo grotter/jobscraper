@@ -62,11 +62,24 @@ async function getJobs (isString = true) {
     };
 }
 
+async function getInternalJobDetails (job) {
+    if (!job.absolute_url) return;
+
+    const response = await fetch(CONFIG.ENDPOINT_INTERNAL + job.absolute_url, {
+        headers: {
+            'Cookie': '_session_id=' + CONFIG.SESSION_ID + ';'
+        }
+    });
+    
+    const html = await response.text();
+    console.log(html);
+}
+
 async function getInternalJobs (isString = true) {
     let isSuccess = false;
 
     try {
-        const response = await fetch(CONFIG.ENDPOINT_INTERNAL, {
+        const response = await fetch(CONFIG.ENDPOINT_INTERNAL + CONFIG.INTERNAL_JOB_BOARD_RESOURCE, {
             headers: {
                 'Cookie': '_session_id=' + CONFIG.SESSION_ID + ';'
             }
@@ -79,6 +92,10 @@ async function getInternalJobs (isString = true) {
         if (dom.window.__remixContext && dom.window.__remixContext.state.loaderData) {
             const jobsData = dom.window.__remixContext.state.loaderData['routes/internal_job_board'].jobPosts.data;
             
+            // @todo
+            // append detailed job data
+            // jobsData.forEach(getInternalJobDetails);
+
             if (isString) {
                 const saveResult = await saveToS3(JSON.stringify(jobsData), true);
                 isSuccess = (saveResult && typeof(saveResult.ETag) == 'string');
@@ -112,6 +129,6 @@ async function start (event, context) {
 if (process.env.AWS_EXECUTION_ENV) {
     exports.handler = start;
 } else {
-    let data = JSON.parse(process.argv[2] || '{}');
+    let data = JSON.parse(process.argv[2] || '{"type": "internal", "isString": false}');
 	start(data);
 }
