@@ -63,16 +63,26 @@ async function getJobs (isString = true) {
 }
 
 async function getInternalJobDetails (job) {
-    if (!job.absolute_url) return;
+    if (!job.absolute_url) return false;
 
-    const response = await fetch(CONFIG.ENDPOINT_INTERNAL + job.absolute_url, {
-        headers: {
-            'Cookie': '_session_id=' + CONFIG.SESSION_ID + ';'
-        }
-    });
+    try {
+        const response = await fetch(CONFIG.ENDPOINT_INTERNAL + job.absolute_url, {
+            headers: {
+                'Cookie': '_session_id=' + CONFIG.SESSION_ID + ';'
+            }
+        });
+        
+        const html = await response.text();
+        const dom = new JSDOM(html, { runScripts: 'dangerously' });
     
-    const html = await response.text();
-    console.log(html);
+        if (dom.window.__remixContext && dom.window.__remixContext.state.loaderData) {
+            return dom.window.__remixContext.state.loaderData['routes/internal_job_board_.applications_.$job_post_id'].jobPost;
+        }
+    } catch (e) {
+        console.error(e);
+    }
+
+    return false;
 }
 
 async function getInternalJobs (isString = true) {
@@ -92,9 +102,13 @@ async function getInternalJobs (isString = true) {
         if (dom.window.__remixContext && dom.window.__remixContext.state.loaderData) {
             const jobsData = dom.window.__remixContext.state.loaderData['routes/internal_job_board'].jobPosts.data;
             
-            // @todo
-            // append detailed job data
-            // jobsData.forEach(getInternalJobDetails);
+            // append details
+            let i = jobsData.length;
+            
+            while (i--) {
+                const details = await getInternalJobDetails(jobsData[i]);
+                jobsData[i].details = details;
+            }
 
             if (isString) {
                 const saveResult = await saveToS3(JSON.stringify(jobsData), true);
