@@ -49,6 +49,9 @@ ${jobDescription}
 
     try {
         const response = await client.send(command);
+        
+        // token usage info
+        // console.log(response.usage);
 
         const outputText = response.output?.message?.content
             ?.map(c => c.text)
