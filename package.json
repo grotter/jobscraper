@@ -1,7 +1,9 @@
 {
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.895.0",
     "@aws-sdk/client-s3": "^3.887.0",
     "dayjs": "^1.11.18",
+    "he": "^1.2.0",
     "jsdom": "^26.1.0"
   }
 }

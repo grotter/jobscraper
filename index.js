@@ -1,8 +1,10 @@
 const { JSDOM } = require('jsdom');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const dayjs = require('dayjs');
+const he = require('he');
 
 const CONFIG = require('./config');
+const { inferCompensationRange } = require('./infercompensationrange');
 
 async function saveToS3 (stringContent, isInternal = false) {
     // validate
@@ -44,11 +46,22 @@ async function getJobs (isString = true) {
         
         // validate json
         if (data !== null) {
+            let i = data.jobs.length;
+            
+            while (i--) {
+                // decode html entities
+                data.jobs[i].content = he.decode(data.jobs[i].content || '');
+                
+                // append inferred pay range
+                const obj = await inferCompensationRange(data.jobs[i].content);
+                data.jobs[i].pay_ranges_inferred = [ obj ];
+            }
+
             if (isString) {
-                const saveResult = await saveToS3(html);
+                const saveResult = await saveToS3(JSON.stringify(data), false);
                 isSuccess = (saveResult && typeof(saveResult.ETag) == 'string');
             } else {
-                console.log(data);
+                console.log(JSON.stringify(data, null, 2));
                 isSuccess = true;
             }
         }
@@ -109,7 +122,12 @@ async function getInternalJobs (isString = true) {
             let i = jobsData.length;
             
             while (i--) {
-                const details = await getInternalJobDetails(jobsData[i]);
+                let details = await getInternalJobDetails(jobsData[i]);
+
+                // append inferred pay range
+                const obj = await inferCompensationRange(details.content);
+                details.pay_ranges_inferred = [ obj ];
+
                 jobsData[i].details = details;
             }
 
@@ -117,7 +135,7 @@ async function getInternalJobs (isString = true) {
                 const saveResult = await saveToS3(JSON.stringify(jobsData), true);
                 isSuccess = (saveResult && typeof(saveResult.ETag) == 'string');
             } else {
-                console.log(jobsData);
+                console.log(JSON.stringify(jobsData, null, 2));
                 isSuccess = true;
             }
         }
@@ -146,6 +164,6 @@ async function start (event, context) {
 if (process.env.AWS_EXECUTION_ENV) {
     exports.handler = start;
 } else {
-    let data = JSON.parse(process.argv[2] || '{"type": "internal", "isString": false}');
+    let data = JSON.parse(process.argv[2] || '{"type": "external", "isString": false}');
 	start(data);
 }
