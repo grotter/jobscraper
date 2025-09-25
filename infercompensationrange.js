@@ -1,5 +1,11 @@
 const { BedrockRuntimeClient, ConverseCommand } = require('@aws-sdk/client-bedrock-runtime');
 const client = new BedrockRuntimeClient({ region: 'us-west-2' });
+const STRIP_STRING = 'Compensation';
+
+function stripUpTo (originalString, searchString) {
+    const regex = new RegExp(`.*?(?=${searchString})`, 'i');
+    return originalString.replace(regex, '');
+}
 
 function cleanJobDescription (html) {
     let text = html
@@ -9,7 +15,9 @@ function cleanJobDescription (html) {
         .replace(/<\/p>/gi, "\n");
 
     text = text.replace(/<[^>]*>/g, " ");
-    return text.replace(/\s+/g, " ").replace(/•\s+/g, "• ").trim();
+    text = text.replace(/\s+/g, " ").replace(/•\s+/g, "• ").trim();
+
+    return stripUpTo(text, STRIP_STRING);
 }
 
 async function inferCompensationRange (rawJobDescription) {
