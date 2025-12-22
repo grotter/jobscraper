@@ -41,7 +41,7 @@ ${jobDescription}
 """`;
 
     const command = new ConverseCommand({
-        modelId: 'anthropic.claude-3-5-haiku-20241022-v1:0',
+        modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
         system: [{ text: systemPrompt }],
         messages: [
             {
@@ -64,6 +64,7 @@ ${jobDescription}
         const outputText = response.output?.message?.content
             ?.map(c => c.text)
             .join(' ')
+            .replace('```json', '').replace('```', '')
             .trim();
 
         let parsed;
