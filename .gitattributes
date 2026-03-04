@@ -3,3 +3,4 @@
 config.js.template export-ignore
 deploy.sh export-ignore
 README.md export-ignore
+search.py export-ignore
