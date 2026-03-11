@@ -7,9 +7,23 @@ import argparse
 from typing import List, Dict, Any
 
 def get_jobs(data: Any) -> List[Dict]:
-    """Extract list of job dicts from data (handles both single job and jobs array)"""
+    """Extract list of job dicts from data, normalized to a flat structure.
+
+    External format: { "jobs": [ { title, id, first_published, pay_ranges_inferred, ... } ] }
+    Internal format: [ { title, details: { id, first_published, pay_ranges_inferred, ... } } ]
+    """
     if isinstance(data, dict) and 'jobs' in data:
+        # External format
         return [j for j in data['jobs'] if isinstance(j, dict)]
+    elif isinstance(data, list):
+        # Internal format: merge details into top level so downstream field access is uniform
+        jobs = []
+        for j in data:
+            if not isinstance(j, dict):
+                continue
+            details = j.get('details') or {}
+            jobs.append({**details, 'title': j.get('title') or details.get('title', '')})
+        return jobs
     elif isinstance(data, dict):
         return [data]
     return []
