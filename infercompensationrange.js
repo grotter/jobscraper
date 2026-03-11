@@ -1,5 +1,6 @@
 const { BedrockRuntimeClient, ConverseCommand } = require('@aws-sdk/client-bedrock-runtime');
 const client = new BedrockRuntimeClient({ region: 'us-west-2' });
+const fs = require('fs');
 const STRIP_STRING = 'Compensation';
 
 function stripUpTo (originalString, searchString) {
@@ -84,3 +85,6 @@ ${jobDescription}
 }
 
 module.exports = { inferCompensationRange };
+
+// const sampleJob = fs.readFileSync('sample.txt', 'utf8');
+// inferCompensationRange(sampleJob).then(result => console.log(result));
