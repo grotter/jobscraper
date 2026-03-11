@@ -5,21 +5,16 @@ import sys
 import argparse
 from typing import List, Dict, Any
 
-def search_in_value(value: Any, search_term: str) -> bool:
-    """Recursively search for term in any value (string, list, dict)"""
-    search_lower = search_term.lower()
-
-    if isinstance(value, str):
-        return search_lower in value.lower()
-    elif isinstance(value, list):
-        return any(search_in_value(item, search_term) for item in value)
-    elif isinstance(value, dict):
-        return any(search_in_value(v, search_term) for v in value.values())
-    else:
-        return False
+def get_jobs(data: Any) -> List[Dict]:
+    """Extract list of job dicts from data (handles both single job and jobs array)"""
+    if isinstance(data, dict) and 'jobs' in data:
+        return [j for j in data['jobs'] if isinstance(j, dict)]
+    elif isinstance(data, dict):
+        return [data]
+    return []
 
 def search_json_files(bucket: str, prefix: str, search_term: str):
-    """Search for term in all JSON files in S3 bucket"""
+    """Search for term in job titles in all JSON files in S3 bucket"""
     s3 = boto3.client('s3')
 
     print(f"Searching for '{search_term}' in s3://{bucket}/{prefix}")
@@ -52,10 +47,15 @@ def search_json_files(bucket: str, prefix: str, search_term: str):
                     # Parse JSON
                     data = json.loads(content)
 
-                    # Search for the term
-                    if search_in_value(data, search_term):
-                        matches_found += 1
-                        print(f"✓ MATCH: s3://{bucket}/{key}")
+                    # Search titles only
+                    for job in get_jobs(data):
+                        title = job.get('title', '')
+                        if search_term.lower() in title.lower():
+                            matches_found += 1
+                            print(f"✓ MATCH: {title}  (s3://{bucket}/{key})")
+                            pay_ranges = job.get('pay_ranges_inferred')
+                            if pay_ranges is not None:
+                                print(f"  pay_ranges_inferred: {pay_ranges}")
 
                 except json.JSONDecodeError:
                     print(f"✗ ERROR: Invalid JSON in s3://{bucket}/{key}", file=sys.stderr)
