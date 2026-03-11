@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import boto3
+import csv
 import json
 import sys
 import argparse
@@ -70,13 +71,79 @@ def search_json_files(bucket: str, prefix: str, search_term: str):
     print(f"Files searched: {files_searched}")
     print(f"Matches found: {matches_found}")
 
+def export_csv(bucket: str, prefix: str, output_path: str):
+    """Export all jobs, unique by id, to a CSV file"""
+    s3 = boto3.client('s3')
+
+    print(f"Exporting jobs from s3://{bucket}/{prefix} to {output_path}")
+
+    seen_ids = set()
+    rows = []
+
+    paginator = s3.get_paginator('list_objects_v2')
+
+    try:
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+            if 'Contents' not in page:
+                continue
+
+            for obj in page['Contents']:
+                key = obj['Key']
+                if not key.lower().endswith('.json'):
+                    continue
+
+                try:
+                    response = s3.get_object(Bucket=bucket, Key=key)
+                    content = response['Body'].read().decode('utf-8')
+                    data = json.loads(content)
+
+                    for job in get_jobs(data):
+                        job_id = job.get('id')
+                        if job_id is None or job_id in seen_ids:
+                            continue
+                        seen_ids.add(job_id)
+
+                        pay = (job.get('pay_ranges_inferred') or [{}])[0]
+                        rows.append({
+                            'date_posted': job.get('first_published', ''),
+                            'job_id': job_id,
+                            'title': job.get('title', ''),
+                            'pay_min': pay.get('min', ''),
+                            'pay_max': pay.get('max', ''),
+                            'pay_period': pay.get('period', ''),
+                        })
+
+                except json.JSONDecodeError:
+                    print(f"✗ ERROR: Invalid JSON in s3://{bucket}/{key}", file=sys.stderr)
+                except Exception as e:
+                    print(f"✗ ERROR: Failed to process s3://{bucket}/{key}: {e}", file=sys.stderr)
+
+    except Exception as e:
+        print(f"✗ ERROR: Failed to list objects: {e}", file=sys.stderr)
+        return
+
+    with open(output_path, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=['date_posted', 'job_id', 'title', 'pay_min', 'pay_max', 'pay_period'])
+        writer.writeheader()
+        writer.writerows(rows)
+
+    print(f"Exported {len(rows)} unique jobs to {output_path}")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description='Search for a term in JSON files stored in S3'
     )
     parser.add_argument(
         'search_term',
+        nargs='?',
+        default='',
         help='The term to search for in the JSON files'
+    )
+    parser.add_argument(
+        '--export-csv',
+        metavar='OUTPUT_PATH',
+        help='Export all unique jobs to a CSV file at the given path'
     )
     parser.add_argument(
         '--bucket',
@@ -91,4 +158,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    search_json_files(args.bucket, args.prefix, args.search_term)
+    if args.export_csv:
+        export_csv(args.bucket, args.prefix, args.export_csv)
+    else:
+        search_json_files(args.bucket, args.prefix, args.search_term)
