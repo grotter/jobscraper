@@ -2,8 +2,10 @@
 import boto3
 import csv
 import json
+import os
 import sys
 import argparse
+from datetime import datetime
 from typing import List, Dict, Any
 
 def get_jobs(data: Any) -> List[Dict]:
@@ -16,13 +18,16 @@ def get_jobs(data: Any) -> List[Dict]:
         # External format
         return [j for j in data['jobs'] if isinstance(j, dict)]
     elif isinstance(data, list):
-        # Internal format: merge details into top level so downstream field access is uniform
+        # Internal format: top-level has id, title, updated_at, published_at, etc.
+        # details sub-object has supplementary fields (pay_ranges, post_type, etc.)
+        # Merge both with top-level taking precedence.
         jobs = []
         for j in data:
             if not isinstance(j, dict):
                 continue
             details = j.get('details') or {}
-            jobs.append({**details, 'title': j.get('title') or details.get('title', '')})
+            merged = {**details, **{k: v for k, v in j.items() if k != 'details'}}
+            jobs.append(merged)
         return jobs
     elif isinstance(data, dict):
         return [data]
@@ -89,10 +94,14 @@ def export_csv(bucket: str, prefix: str, output_path: str):
     """Export all jobs, unique by id, to a CSV file"""
     s3 = boto3.client('s3')
 
+    if os.path.isdir(output_path):
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_path = os.path.join(output_path, f'jobs_{timestamp}.csv')
+
     print(f"Exporting jobs from s3://{bucket}/{prefix} to {output_path}")
 
-    seen_ids = set()
-    rows = []
+    # Maps job_id -> (updated_at, row) so we keep the most recently updated version
+    jobs_by_id = {}
 
     paginator = s3.get_paginator('list_objects_v2')
 
@@ -111,21 +120,48 @@ def export_csv(bucket: str, prefix: str, output_path: str):
                     content = response['Body'].read().decode('utf-8')
                     data = json.loads(content)
 
+                    is_internal = 'internal' in key.lower()
+
                     for job in get_jobs(data):
                         job_id = job.get('id')
-                        if job_id is None or job_id in seen_ids:
+                        if job_id is None:
                             continue
-                        seen_ids.add(job_id)
 
-                        pay = (job.get('pay_ranges_inferred') or [{}])[0]
-                        rows.append({
-                            'date_posted': job.get('first_published', ''),
-                            'job_id': job_id,
-                            'title': job.get('title', ''),
+                        updated_at_str = job.get('updated_at', '')
+                        try:
+                            updated_at = datetime.fromisoformat(updated_at_str) if updated_at_str else None
+                        except ValueError:
+                            updated_at = None
+                        pay = (job.get('pay_ranges_inferred') or job.get('pay_ranges') or [{}])[0]
+                        pay_fields = {
                             'pay_min': pay.get('min', ''),
                             'pay_max': pay.get('max', ''),
                             'pay_period': pay.get('period', ''),
-                        })
+                        }
+
+                        existing = jobs_by_id.get(job_id)
+                        if existing:
+                            existing_ts, existing_row = existing
+                            newer = existing_ts is None or (updated_at is not None and updated_at > existing_ts)
+                            if newer:
+                                existing_row.update(pay_fields)
+                                existing_row['is_internal'] = is_internal
+                                jobs_by_id[job_id] = (updated_at, existing_row)
+                            else:
+                                # Not newer — still update pay if the new data is more complete
+                                existing_completeness = sum(1 for f in ('pay_min', 'pay_max', 'pay_period') if existing_row.get(f) != '')
+                                new_completeness = sum(1 for v in pay_fields.values() if v != '')
+                                if new_completeness > existing_completeness:
+                                    existing_row.update(pay_fields)
+                        else:
+                            jobs_by_id[job_id] = (updated_at, {
+                                'date_posted': job.get('first_published') or job.get('published_at', ''),
+                                'last_updated': job.get('updated_at', ''),
+                                'job_id': job_id,
+                                'title': job.get('title', ''),
+                                'is_internal': is_internal,
+                                **pay_fields,
+                            })
 
                 except json.JSONDecodeError:
                     print(f"✗ ERROR: Invalid JSON in s3://{bucket}/{key}", file=sys.stderr)
@@ -136,8 +172,10 @@ def export_csv(bucket: str, prefix: str, output_path: str):
         print(f"✗ ERROR: Failed to list objects: {e}", file=sys.stderr)
         return
 
+    rows = [row for _, row in jobs_by_id.values()]
+
     with open(output_path, 'w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=['date_posted', 'job_id', 'title', 'pay_min', 'pay_max', 'pay_period'])
+        writer = csv.DictWriter(f, fieldnames=['date_posted', 'last_updated', 'job_id', 'title', 'is_internal', 'pay_min', 'pay_max', 'pay_period'])
         writer.writeheader()
         writer.writerows(rows)
 
