@@ -3,10 +3,23 @@ import boto3
 import csv
 import json
 import os
+import re
 import sys
 import argparse
 from datetime import datetime
 from typing import List, Dict, Any
+
+_FILE_TS_RE = re.compile(r'(\d{8}_\d{6})')
+
+def _parse_file_ts(label: str) -> datetime:
+    """Extract a datetime from a filename timestamp like 20260312_160046."""
+    m = _FILE_TS_RE.search(label)
+    if m:
+        try:
+            return datetime.strptime(m.group(1), '%Y%m%d_%H%M%S')
+        except ValueError:
+            pass
+    return None
 
 def get_jobs(data: Any) -> List[Dict]:
     """Extract list of job dicts from data, normalized to a flat structure.
@@ -105,8 +118,16 @@ def export_csv(bucket: str, prefix: str, output_path: str, local_dir: str = None
 
     # Maps job_id -> (updated_at, row) so we keep the most recently updated version
     jobs_by_id = {}
+    # Maps job_id -> last file timestamp where the job was seen
+    last_seen_file_ts: Dict[int, datetime] = {}
+    # All file timestamps encountered, for computing date_removed
+    all_file_ts = []
 
     for label, content in iter_json_files(bucket, prefix, local_dir):
+        file_ts = _parse_file_ts(label)
+        if file_ts:
+            all_file_ts.append(file_ts)
+
         try:
             data = json.loads(content)
             is_internal = 'internal' in label.lower()
@@ -115,6 +136,9 @@ def export_csv(bucket: str, prefix: str, output_path: str, local_dir: str = None
                 job_id = job.get('id')
                 if job_id is None:
                     continue
+
+                if file_ts and (job_id not in last_seen_file_ts or file_ts > last_seen_file_ts[job_id]):
+                    last_seen_file_ts[job_id] = file_ts
 
                 updated_at_str = job.get('updated_at', '')
                 try:
@@ -149,16 +173,27 @@ def export_csv(bucket: str, prefix: str, output_path: str, local_dir: str = None
                         'job_id': job_id,
                         'title': job.get('title', ''),
                         'is_internal': is_internal,
+                        'date_removed': '',
                         **pay_fields,
                     })
 
         except json.JSONDecodeError:
             print(f"✗ ERROR: Invalid JSON in {label}", file=sys.stderr)
 
+    # Determine date_removed: first file timestamp after a job's last appearance
+    if all_file_ts:
+        sorted_file_ts = sorted(set(all_file_ts))
+        for job_id, (_, row) in jobs_by_id.items():
+            last_seen = last_seen_file_ts.get(job_id)
+            if last_seen:
+                later = [ts for ts in sorted_file_ts if ts > last_seen]
+                if later:
+                    row['date_removed'] = later[0].strftime('%Y-%m-%dT%H:%M:%S')
+
     rows = [row for _, row in jobs_by_id.values()]
 
     with open(output_path, 'w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=['date_posted', 'last_updated', 'job_id', 'title', 'is_internal', 'pay_min', 'pay_max', 'pay_period'])
+        writer = csv.DictWriter(f, fieldnames=['job_id', 'title', 'is_internal', 'pay_min', 'pay_max', 'pay_period', 'date_posted', 'last_updated', 'date_removed'])
         writer.writeheader()
         writer.writerows(rows)
 
