@@ -46,49 +46,43 @@ def get_jobs(data: Any) -> List[Dict]:
         return [data]
     return []
 
-def iter_json_files(bucket: str, prefix: str, local_dir: str = None):
-    """Yield (label, content) for each JSON file from a local directory or S3."""
-    if local_dir:
-        for dirpath, _, filenames in os.walk(local_dir):
-            for filename in sorted(filenames):
-                if not filename.lower().endswith('.json'):
-                    continue
-                filepath = os.path.join(dirpath, filename)
-                try:
-                    with open(filepath, 'r', encoding='utf-8') as f:
-                        yield filepath, f.read()
-                except Exception as e:
-                    print(f"✗ ERROR: Failed to read {filepath}: {e}", file=sys.stderr)
-    else:
-        s3 = boto3.client('s3')
-        paginator = s3.get_paginator('list_objects_v2')
-        try:
-            for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-                if 'Contents' not in page:
-                    continue
-                for obj in page['Contents']:
-                    key = obj['Key']
-                    if not key.lower().endswith('.json'):
-                        continue
-                    label = f"s3://{bucket}/{key}"
-                    try:
-                        response = s3.get_object(Bucket=bucket, Key=key)
-                        yield label, response['Body'].read().decode('utf-8')
-                    except Exception as e:
-                        print(f"✗ ERROR: Failed to read {label}: {e}", file=sys.stderr)
-        except Exception as e:
-            print(f"✗ ERROR: Failed to list objects: {e}", file=sys.stderr)
+LOCAL_JSON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'json')
 
-def search_json_files(bucket: str, prefix: str, search_term: str, local_dir: str = None):
-    """Search for term in job titles in all JSON files in S3 bucket or local directory"""
-    source = local_dir or f"s3://{bucket}/{prefix}"
-    print(f"Searching for '{search_term}' in {source}")
+def sync_from_s3(bucket: str, prefix: str):
+    """Sync new JSON files from S3 to LOCAL_JSON_DIR using aws s3 sync."""
+    import subprocess
+    os.makedirs(LOCAL_JSON_DIR, exist_ok=True)
+    s3_uri = f"s3://{bucket}/{prefix}"
+    result = subprocess.run(
+        ['aws', 's3', 'sync', s3_uri, LOCAL_JSON_DIR, '--exclude', '*', '--include', '*.json'],
+        capture_output=False,
+    )
+    if result.returncode != 0:
+        print(f"✗ ERROR: aws s3 sync failed", file=sys.stderr)
+
+def iter_json_files():
+    """Yield (label, content) for each JSON file in LOCAL_JSON_DIR, including subdirectories."""
+    for dirpath, _, filenames in os.walk(LOCAL_JSON_DIR):
+        for filename in sorted(filenames):
+            if not filename.lower().endswith('.json'):
+                continue
+            filepath = os.path.join(dirpath, filename)
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    yield filepath, f.read()
+            except Exception as e:
+                print(f"✗ ERROR: Failed to read {filepath}: {e}", file=sys.stderr)
+
+def search_json_files(bucket: str, prefix: str, search_term: str):
+    """Search for term in job titles in all local JSON files"""
+    sync_from_s3(bucket, prefix)
+    print(f"Searching for '{search_term}' in {LOCAL_JSON_DIR}/")
     print("-" * 80)
 
     matches_found = 0
     files_searched = 0
 
-    for label, content in iter_json_files(bucket, prefix, local_dir):
+    for label, content in iter_json_files():
         files_searched += 1
         try:
             data = json.loads(content)
@@ -107,14 +101,14 @@ def search_json_files(bucket: str, prefix: str, search_term: str, local_dir: str
     print(f"Files searched: {files_searched}")
     print(f"Matches found: {matches_found}")
 
-def export_csv(bucket: str, prefix: str, output_path: str, local_dir: str = None):
+def export_csv(bucket: str, prefix: str, output_path: str):
     """Export all jobs, unique by id, to a CSV file"""
+    sync_from_s3(bucket, prefix)
     if os.path.isdir(output_path):
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         output_path = os.path.join(output_path, f'jobs_{timestamp}.csv')
 
-    source = local_dir or f"s3://{bucket}/{prefix}"
-    print(f"Exporting jobs from {source} to {output_path}")
+    print(f"Exporting jobs from {LOCAL_JSON_DIR}/ to {output_path}")
 
     # Maps job_id -> (updated_at, row) so we keep the most recently updated version
     jobs_by_id = {}
@@ -123,7 +117,7 @@ def export_csv(bucket: str, prefix: str, output_path: str, local_dir: str = None
     # All file timestamps encountered, for computing date_removed
     all_file_ts = []
 
-    for label, content in iter_json_files(bucket, prefix, local_dir):
+    for label, content in iter_json_files():
         file_ts = _parse_file_ts(label)
         if file_ts:
             all_file_ts.append(file_ts)
@@ -227,15 +221,9 @@ if __name__ == "__main__":
         default='jobs/',
         help='S3 key prefix (default: jobs/)'
     )
-    parser.add_argument(
-        '--local',
-        metavar='DIR',
-        help='Use a local directory instead of S3'
-    )
-
     args = parser.parse_args()
 
     if args.export_csv:
-        export_csv(args.bucket, args.prefix, args.export_csv, local_dir=args.local)
+        export_csv(args.bucket, args.prefix, args.export_csv)
     else:
-        search_json_files(args.bucket, args.prefix, args.search_term, local_dir=args.local)
+        search_json_files(args.bucket, args.prefix, args.search_term)
